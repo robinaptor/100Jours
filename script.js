@@ -52,45 +52,45 @@ function lerp(start, end, factor) {
 function updatePhysics() {
      frameCount++;
 
-     // Smooth mouse movement (Lag effect)
      const prevX = mouse.x;
      const prevY = mouse.y;
 
-     // Lower factor = more lag/weight
+     // Smooth mouse movement (Lag effect)
      mouse.x = lerp(mouse.x, targetMouse.x, 0.08);
      mouse.y = lerp(mouse.y, targetMouse.y, 0.08);
 
-     // Calculate speed based on the LAG movement (smoother)
+     // Calculate Speed based on mouse delta
      const dx = mouse.x - prevX;
      const dy = mouse.y - prevY;
      const dist = Math.sqrt(dx * dx + dy * dy);
 
-     speed = lerp(speed, dist, 0.15); // Increased reactivity (was 0.1)
+     // --- MEMORY PERSISTENCE LOGIC ---
+
+     // Threshold for "Stopped": if moving very slowly, we consider it a pause in exploration.
+     if (dist < 0.5) {
+          // STOP LOCK: Do NOT update speed. Keep current image.
+          // We do nothing to 'speed' variable.
+     } else {
+          // MOVING:
+          if (dist > speed) {
+               // ACCELERATION (Attack): React reasonably fast to connect movement = time travel
+               speed = lerp(speed, dist, 0.15);
+          } else {
+               // DECELERATION (Decay/CoolDown): Decay VERY slowly to allow exploration of high-index images
+               speed = lerp(speed, dist, 0.02);
+          }
+     }
 
      // Map speed to index
-     // 0 to MAX_SPEED -> 0 to 95
-     // Use a power curve to make it easier to stay in the past or reach the future
      let ratio = Math.min(speed / MAX_SPEED, 1);
-     // easing: ratio = ratio * ratio; // optional non-linear
-
-     // Easing for index: lowered exponent for more linear spread
      let easedRatio = Math.pow(ratio, 1.1);
 
      let targetIndex = Math.floor(easedRatio * (TOTAL_IMAGES - 1));
 
-     // --- BREATHING EFFECT ---
-     // When still, drift through the first few images
-     // Use Sine wave: varies between 0 and 1
-     // Map to offset 0-10
-     const breathingOffset = Math.abs(Math.sin(frameCount * 0.02)) * 12;
-
-     // Combine: If speed is high, breathing matters less?
-     // Actually, adding it always feels organic.
-     targetIndex += breathingOffset;
-
      if (targetIndex < 0) targetIndex = 0;
      if (targetIndex >= TOTAL_IMAGES) targetIndex = TOTAL_IMAGES - 1;
 
+     // No breathing, just stick to the index
      currentImageIndex = Math.floor(targetIndex);
 }
 
@@ -109,42 +109,12 @@ function draw() {
           // Amount of split depends on speed
           const splitAmount = speed * 1.5; // Multiplier
 
-          // Calculate Image Dimensions (Cover)
-          const imgRatio = img.width / img.height;
-          const canvasRatio = canvas.width / canvas.height;
-          let dw, dh, ox, oy;
-
-          if (canvasRatio > imgRatio) {
-               dw = canvas.width;
-               dh = canvas.width / imgRatio;
-               ox = 0;
-               oy = (canvas.height - dh) / 2;
-          } else {
-               dh = canvas.height;
-               dw = canvas.height * imgRatio;
-               ox = (canvas.width - dw) / 2;
-               oy = 0;
-          }
-
-          // We will draw the image 3 times (R, G, B) with offsets
-          // Composite mode 'screen' or 'lighter' allows adding colors up to white
-          // But since we want to mask it all later, we need to be careful.
-          // Strategy: Draw RGB split to canvas, THEN apply mask using 'destination-in'.
-
-          // RED Channel
-          ctx.globalCompositeOperation = 'source-over'; // Base layer (or use screen if black bg)
-          // Actually, normal blending of full images on top of each other just overwrites.
-          // We need to simulate channels.
-          // A simple fake RGB split:
-          // Draw normal image, then draw tinted versions? No.
-
-          // Better Canvas approach for performance without pixel manipulation:
-          // Just draw the standard image. The "RGB Split" is hard to do cheaply without WebGL.
-          // WAIT: We can use 'multiply' or 'screen' with pure red/green/blue rectangles? No.
-
-          // Simplified "Shake" effect + "Chromatic Edge":
-          // Actually, let's just draw the image 3 times with low opacity 'screen' mode?
-          // No, that makes it too bright.
+          // Force Image to Fill Screen (Stretch)
+          // This ensures Top-Left of Image = Top-Left of Screen
+          const dw = canvas.width;
+          const dh = canvas.height;
+          const ox = 0;
+          const oy = 0;
 
           // fallback: Just Jitter/Shake position based on speed
           const jitterX = (Math.random() - 0.5) * speed * 0.5;
@@ -158,7 +128,6 @@ function draw() {
           if (speed > 5) {
                ctx.globalCompositeOperation = 'screen';
                ctx.globalAlpha = 0.5; // Ghost opacity
-               // Offset based on direction of movement vs speed?
                // Simple approach: Shift Left
                ctx.drawImage(img, ox + jitterX - splitAmount, oy + jitterY, dw, dh);
                // shift Right (Blue/Cyan ghost?)
